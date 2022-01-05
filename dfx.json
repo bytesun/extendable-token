@@ -1,0 +1,28 @@
+{
+  "canisters": {
+    
+    "iceventicket": {
+      "main": "examples/iceventicket.mo",
+      "type": "motoko"
+    },
+    "icet": {
+      "main": "examples/icet.mo",
+      "type": "motoko"
+    }
+    
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "dfx": "0.8.4",
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:8000",
+      "type": "ephemeral"
+    }
+  },
+  "version": 1
+}

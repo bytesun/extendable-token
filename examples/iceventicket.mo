@@ -12,11 +12,15 @@ import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Iter "mo:base/Iter";
 import Array "mo:base/Array";
+import Time "mo:base/Time";
+import Nat64 "mo:base/Nat64";
+
 import AID "../motoko/util/AccountIdentifier";
 import ExtCore "../motoko/ext/Core";
 import ExtCommon "../motoko/ext/Common";
 import ExtAllowance "../motoko/ext/Allowance";
 import ExtNonFungible "../motoko/ext/NonFungible";
+import ExtArchive "../motoko/ext/Archive";
 
 shared (install) actor class iceventicket() = this {
   
@@ -36,13 +40,19 @@ shared (install) actor class iceventicket() = this {
   type AllowanceRequest = ExtAllowance.AllowanceRequest;
   type ApproveRequest = ExtAllowance.ApproveRequest;
   type Metadata = ExtCommon.Metadata;
+    //archive
+  type TransactionId = ExtArchive.TransactionId;
+  type Transaction = ExtArchive.Transaction;
+  type TransactionsRequest = ExtArchive.TransactionsRequest;
+
   type MintRequest  = ExtNonFungible.MintRequest ;
+
   type Minter = {
     minter: Principal;
     quota: Nat;
     minted: [TokenIndex];
   };
-  private let EXTENSIONS : [Extension] = ["@ext/common", "@ext/allowance", "@ext/nonfungible"];
+  private let EXTENSIONS : [Extension] = ["@ext/common","@ext/archive", "@ext/allowance", "@ext/nonfungible"];
   
   //State work
   private stable var _registryState : [(TokenIndex, AccountIdentifier)] = [];
@@ -53,12 +63,17 @@ shared (install) actor class iceventicket() = this {
 	
 	private stable var _tokenMetadataState : [(TokenIndex, Metadata)] = [];
   private var _tokenMetadata : HashMap.HashMap<TokenIndex, Metadata> = HashMap.fromIter(_tokenMetadataState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
-  
+
+
+
+  private stable var _nextTransationId : TransactionId = 1;
+  private stable var _transactions : [Transaction] = [];
+
   private stable var _supply : Balance  = 0;
-  private stable var _minter : Principal  = install.caller;
+  private stable var _admin : Principal  = install.caller;
   private stable var _minters : [Minter] = [];
   private stable var _nextTokenId : TokenIndex  = 0;
-
+  private stable var _metadata : ?Blob = null;  
 
   //State functions
   system func preupgrade() {
@@ -73,13 +88,24 @@ shared (install) actor class iceventicket() = this {
   };
 
 	public shared(msg) func setMinter(minter : Principal, quota: Nat) : async () {
-		assert(msg.caller == _minter);
+		assert(msg.caller == _admin);
     let fminter = Array.find<Minter>(_minters, func(m){
       m.minter == minter
     });
     switch(fminter){
       case(?fminter){
-
+        //add more quota
+        _minters := Array.map<Minter,Minter>(_minters, func(m:Minter): Minter{
+          if(m.minter == minter){ 
+            {
+              minter = m.minter;
+              quota = m.quota + quota;
+              minted = m.minted;
+            }
+          }else{
+            m
+          }
+        })       
       };
       case(_){
         _minters := Array.append<Minter>([{minter=minter;quota=quota;minted=[]}],_minters);
@@ -89,6 +115,11 @@ shared (install) actor class iceventicket() = this {
 		//_minter := minter;
 	};
 	
+  //default metadata
+  public shared(msg) func setMetadata(md: ?Blob): async (){   
+        _metadata := md;     
+  };
+
   public shared(msg) func mintNFT(request : MintRequest) : async Result.Result<TokenIndex,Text> {
 		//assert(msg.caller == _minter);
     let fminter = Array.find<Minter>(_minters, func(m){
@@ -134,6 +165,49 @@ shared (install) actor class iceventicket() = this {
     };
     
 	};
+   func add(request : TransferRequest):  TransactionId{
+
+    let transid = _nextTransationId;
+    _transactions := Array.append<Transaction>([{
+      txid = transid;
+      request = request;
+      date = Nat64.fromIntWrap(Time.now());
+    }],_transactions);
+
+    _nextTransationId := _nextTransationId+1;
+
+    transid;
+  };
+
+  public query func transactions(request : TransactionsRequest): async Result.Result<[Transaction], ExtCore.CommonError>{
+    let q = request.query_option;
+    switch(q){
+      case(#txid(q)){
+        let ts = Array.filter<Transaction>(_transactions, func(t: Transaction): Bool{
+          t.txid == q
+        });
+        #ok(ts);
+      };
+      case(#user(q)){
+        let ts =Array.filter(_transactions,func(t: Transaction): Bool{
+          t.request.from == q or t.request.to == q
+         });
+         #ok(ts);
+      };
+      case(#date(q)){
+        #err(#Other("'date' option is not support"))
+      };
+      case(#page(q)){
+        #err(#Other("'page' option is not support"))
+      };
+      case(#all(q)){
+        #ok(_transactions);
+      };
+      
+
+    }
+
+  };
   
   public shared(msg) func transfer(request: TransferRequest) : async TransferResponse {
     if (request.amount != 1) {
@@ -194,9 +268,19 @@ shared (install) actor class iceventicket() = this {
     };
   };
 
-  public query func getMinter() : async Principal {
-    _minter;
+  public shared({caller}) func setAdmin(newAdmin: Principal): async (){
+    assert(caller == _admin);
+    _admin := newAdmin;
   };
+
+  public query func getAdmin() : async Principal {
+    _admin;
+  };
+
+  public query func getMinters() : async [Minter] {
+    _minters;
+  };
+  
   public query func extensions() : async [Extension] {
     EXTENSIONS;
   };

@@ -7,11 +7,15 @@ import HashMap "mo:base/HashMap";
 import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Iter "mo:base/Iter";
+import Array "mo:base/Array";
+import Time "mo:base/Time";
+import Nat64 "mo:base/Nat64";
 
 //Get the path right
 import AID "../motoko/util/AccountIdentifier";
 import ExtCore "../motoko/ext/Core";
 import ExtCommon "../motoko/ext/Common";
+import ExtArchive "../motoko/ext/Archive";
 
 actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat8, init_supply: ExtCore.Balance, init_owner: Principal) = this{
   
@@ -30,12 +34,21 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
   type TransferRequest = ExtCore.TransferRequest;
   type TransferResponse = ExtCore.TransferResponse;
   type Metadata = ExtCommon.Metadata;
-  
-  private let EXTENSIONS : [Extension] = ["@ext/common"];
+  //archive
+  type TransactionId = ExtArchive.TransactionId;
+  type Transaction = ExtArchive.Transaction;
+  type TransactionsRequest = ExtArchive.TransactionsRequest;
+
+
+  private let EXTENSIONS : [Extension] = ["@ext/common","@ext/archive"];
   
   //State work
   private stable var _balancesState : [(AccountIdentifier, Balance)] = [(AID.fromPrincipal(init_owner, null), init_supply)];
   private var _balances : HashMap.HashMap<AccountIdentifier, Balance> = HashMap.fromIter(_balancesState.vals(), 0, AID.equal, AID.hash);
+
+  private stable var _nextTransationId : TransactionId = 1;
+  private stable var _transactions : [Transaction] = [];
+
   private stable let METADATA : Metadata = #fungible({
     name = init_name;
     symbol = init_symbol;
@@ -121,7 +134,9 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
             };
           };
           _balances.put(receiver, receiver_balance_new);
-          
+          //write transactions
+          let txid = add(request);
+
           //Process sender refund
           if (provisional_amount < request.amount) {
             var sender_refund : Balance = request.amount - provisional_amount;
@@ -136,6 +151,7 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
             _balances.put(sender, sender_balance_new2);
           };
           
+          //
           return #ok(provisional_amount);
         } else {
           return #err(#InsufficientBalance);
@@ -147,6 +163,50 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
     };
   };
 
+   func add(request : TransferRequest):  TransactionId{
+
+    let transid = _nextTransationId;
+    _transactions := Array.append<Transaction>([{
+      txid = transid;
+      request = request;
+      date = Nat64.fromIntWrap(Time.now());
+    }],_transactions);
+
+     _nextTransationId := _nextTransationId+1;
+
+    transid;
+  };
+
+  public query func transactions(request : TransactionsRequest): async Result.Result<[Transaction], ExtCore.CommonError>{
+    let q = request.query_option;
+    switch(q){
+      case(#txid(q)){
+        let ts = Array.filter<Transaction>(_transactions, func(t: Transaction): Bool{
+          t.txid == q
+        });
+        #ok(ts);
+      };
+      case(#user(q)){
+        let ts =Array.filter(_transactions,func(t: Transaction): Bool{
+          t.request.from == q or t.request.to == q
+         });
+         #ok(ts);
+      };
+      case(#date(q)){
+        #err(#Other("'date' option is not support"))
+      };
+      case(#page(q)){
+        #err(#Other("'page' option is not support"))
+      };
+      case(#all(q)){
+        #ok(_transactions);
+      };
+      
+
+    }
+
+  };
+  
   public query func extensions() : async [Extension] {
     EXTENSIONS;
   };

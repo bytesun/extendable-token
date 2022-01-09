@@ -33,6 +33,7 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
   type BalanceResponse = ExtCore.BalanceResponse;
   type TransferRequest = ExtCore.TransferRequest;
   type TransferResponse = ExtCore.TransferResponse;
+  type TransferIdResponse = ExtCore.TransferIdResponse;
   type Metadata = ExtCommon.Metadata;
   //archive
   type TransactionId = ExtArchive.TransactionId;
@@ -153,6 +154,104 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
           
           //
           return #ok(provisional_amount);
+        } else {
+          return #err(#InsufficientBalance);
+        };
+      };
+      case (_) {
+        return #err(#InsufficientBalance);
+      };
+    };
+  };
+
+public shared(msg) func transferTo(request: TransferRequest) : async TransferIdResponse {
+    if (ExtCore.TokenIdentifier.isPrincipal(request.token, Principal.fromActor(this)) == false) {
+			return #err(#InvalidToken(request.token));
+		};
+    if (ExtCore.TokenIdentifier.getIndex(request.token) != 0) {
+			return #err(#InvalidToken(request.token));
+		};
+    let sender = ExtCore.User.toAID(request.from);
+    let spender = AID.fromPrincipal(msg.caller, request.subaccount);
+    let receiver = ExtCore.User.toAID(request.to);
+    if (AID.equal(sender, spender) == false) {
+      return #err(#Unauthorized(spender));
+    };
+    
+    switch (_balances.get(sender)) {
+      case (?sender_balance) {
+        if (sender_balance >= request.amount) {
+          //Remove from sender first
+          var sender_balance_new : Balance = sender_balance - request.amount;
+          _balances.put(sender, sender_balance_new);
+          
+          var provisional_amount : Balance = request.amount;
+          if (request.notify) {
+            switch(ExtCore.User.toPrincipal(request.to)) {
+              case (?canisterId) {
+                let notifier : NotifyService = actor(Principal.toText(canisterId));
+                switch(await notifier.tokenTransferNotification(request.token, request.from, request.amount, request.memo)) {
+                  case (?balance) {
+                    provisional_amount := balance;
+                  };
+                  case (_) {
+                    var sender_balance_new2 = switch (_balances.get(sender)) {
+                      case (?sender_balance) {
+                          sender_balance + request.amount;
+                      };
+                      case (_) {
+                          request.amount;
+                      };
+                    };
+                    _balances.put(sender, sender_balance_new2);
+                    return #err(#Rejected);
+                  };
+                };
+              };
+              case (_) {
+                var sender_balance_new2 = switch (_balances.get(sender)) {
+                  case (?sender_balance) {
+                      sender_balance + request.amount;
+                  };
+                  case (_) {
+                      request.amount;
+                  };
+                };
+                _balances.put(sender, sender_balance_new2);
+                return #err(#CannotNotify(receiver));
+              }
+            };
+          };
+          assert(provisional_amount <= request.amount); //should never hit
+          
+          var receiver_balance_new = switch (_balances.get(receiver)) {
+            case (?receiver_balance) {
+                receiver_balance + provisional_amount;
+            };
+            case (_) {
+                provisional_amount;
+            };
+          };
+          _balances.put(receiver, receiver_balance_new);
+          //write transactions
+          let txid = add(request);
+
+          //Process sender refund
+          if (provisional_amount < request.amount) {
+            var sender_refund : Balance = request.amount - provisional_amount;
+            var sender_balance_new2 = switch (_balances.get(sender)) {
+              case (?sender_balance) {
+                  sender_balance + sender_refund;
+              };
+              case (_) {
+                  sender_refund;
+              };
+            };
+            _balances.put(sender, sender_balance_new2);
+          };
+          
+          //
+          return #ok(txid);
         } else {
           return #err(#InsufficientBalance);
         };

@@ -58,6 +58,14 @@ module ExtCore = {
     #CannotNotify: AccountIdentifier;
     #Other : Text;
   }>;
+  public type TransferIdResponse = Result.Result<Nat, {
+    #Unauthorized: AccountIdentifier;
+    #InsufficientBalance;
+    #Rejected; //Rejected by canister
+    #InvalidToken: TokenIdentifier;
+    #CannotNotify: AccountIdentifier;
+    #Other : Text;
+  }>;
   public type NotifyCallback = shared (TokenIdentifier, User, Balance, Memo) -> async ?Balance;
   public type NotifyService = actor { tokenTransferNotification : NotifyCallback};
 

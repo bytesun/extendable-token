@@ -71,6 +71,7 @@ shared (install) actor class iceventicket() = this {
 
   private stable var _supply : Balance  = 0;
   private stable var _admin : Principal  = install.caller;
+  private stable var _moderator : Principal = install.caller;
   private stable var _minters : [Minter] = [];
   private stable var _nextTokenId : TokenIndex  = 0;
   private stable var _metadata : ?Blob = null;  
@@ -87,29 +88,38 @@ shared (install) actor class iceventicket() = this {
     _tokenMetadataState := [];
   };
 
-	public shared(msg) func setMinter(minter : Principal, quota: Nat) : async () {
-		assert(msg.caller == _admin);
-    let fminter = Array.find<Minter>(_minters, func(m){
-      m.minter == minter
-    });
-    switch(fminter){
-      case(?fminter){
-        //add more quota
-        _minters := Array.map<Minter,Minter>(_minters, func(m:Minter): Minter{
-          if(m.minter == minter){ 
-            {
-              minter = m.minter;
-              quota = m.quota + quota;
-              minted = m.minted;
+  public shared({caller}) func setModerator(mod : Principal): async (){
+    assert(caller == _admin);
+    _moderator := mod ;
+  };
+
+	public shared(msg) func setMinter(minter : Principal, quota: Nat) : async Result.Result<Nat, Text> {
+		if(msg.caller == _moderator){
+      let fminter = Array.find<Minter>(_minters, func(m){
+        m.minter == minter
+      });
+      switch(fminter){
+        case(?fminter){
+          //add more quota
+          _minters := Array.map<Minter,Minter>(_minters, func(m:Minter): Minter{
+            if(m.minter == minter){ 
+              {
+                minter = m.minter;
+                quota = m.quota + quota;
+                minted = m.minted;
+              }
+            }else{
+              m
             }
-          }else{
-            m
-          }
-        })       
+          })       
+        };
+        case(_){
+          _minters := Array.append<Minter>([{minter=minter;quota=quota;minted=[]}],_minters);
+        };
       };
-      case(_){
-        _minters := Array.append<Minter>([{minter=minter;quota=quota;minted=[]}],_minters);
-      };
+      #ok(1);
+    }else{
+      #err("no permission!")
     }
     
 		//_minter := minter;
@@ -276,7 +286,9 @@ shared (install) actor class iceventicket() = this {
   public query func getAdmin() : async Principal {
     _admin;
   };
-
+  public query func getModerator() : async Principal {
+    _moderator;
+  };
   public query func getMinters() : async [Minter] {
     _minters;
   };

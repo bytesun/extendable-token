@@ -14,6 +14,9 @@ import Iter "mo:base/Iter";
 import Array "mo:base/Array";
 import Time "mo:base/Time";
 import Nat64 "mo:base/Nat64";
+import Buffer "mo:base/Buffer";
+import Random "mo:base/Random";
+import Nat32 "mo:base/Nat32";
 
 import AID "../motoko/util/AccountIdentifier";
 import ExtCore "../motoko/ext/Core";
@@ -175,6 +178,62 @@ shared (install) actor class iceventicket() = this {
     };
     
 	};
+  public shared({caller}) func mintEventTickets(spender: Principal, metadatas: [Blob]) : async Result.Result<[TokenIndex],Text> {
+		//assert(msg.caller == _minter);
+    let fminter = Array.find<Minter>(_minters, func(m){
+      m.minter == caller;
+    });
+    switch(fminter){
+      case(?fminter){
+        if(metadatas.size() > 0 and metadatas.size() <= (fminter.quota - fminter.minted.size())){
+
+          var newIds = Buffer.Buffer<TokenIndex>(metadatas.size());
+
+          for(i in Iter.range(0, metadatas.size()-1)){
+            let receiver = ExtCore.User.toAID(#principal(caller));
+            let token = _nextTokenId;
+            
+            let md : Metadata = #nonfungible({
+              metadata = ?metadatas[i];
+            }); 
+            _registry.put(token, receiver);
+            _tokenMetadata.put(token, md);
+
+            if(spender != caller) _allowances.put(token,spender );
+
+            newIds.add(token);
+            _supply := _supply + 1;
+            _nextTokenId := _nextTokenId + 1;
+
+          };
+
+
+            //update minter data
+            var minted = fminter.minted;
+            minted := Array.append<TokenIndex>(newIds.toArray(),minted);
+            _minters := Array.map<Minter,Minter>(_minters,func(m: Minter):Minter{
+              if(m.minter == fminter.minter){
+                {
+                  minter = fminter.minter;
+                  quota = fminter.quota;
+                  minted = minted;
+                }
+              }else{
+                m
+              }
+            });
+          #ok(newIds.toArray());
+        }else{
+          #err("no more quota to mint!")
+        };
+        
+      };
+      case(_){
+        #err("no permission!")
+      };
+    };
+    
+	};
    func add(request : TransferRequest):  TransactionId{
 
     let transid = _nextTransationId;
@@ -258,6 +317,42 @@ shared (install) actor class iceventicket() = this {
     };
   };
   
+   public shared({caller}) func transferTicket(to:Principal,token: TokenIndex) : async TransferResponse {
+
+
+		//let token = ExtCore.TokenIdentifier.getIndex(request.token);
+    let owner = ExtCore.User.toAID(#principal(caller));
+    let spender = ExtCore.User.toAID(#principal(caller));
+    let receiver = ExtCore.User.toAID(#principal(to));
+		
+    switch (_registry.get(token)) {
+      case (?token_owner) {
+				if(AID.equal(owner, token_owner) == false) {
+					return #err(#Unauthorized(owner));
+				};
+				if (AID.equal(owner, spender) == false) {
+					switch (_allowances.get(token)) {
+						case (?token_spender) {
+							if(Principal.equal(caller, token_spender) == false) {								
+								return #err(#Unauthorized(spender));
+							};
+						};
+						case (_) {
+							return #err(#Unauthorized(spender));
+						};
+					};
+				};
+				_allowances.delete(token);
+				_registry.put(token, receiver);
+				return #ok(1);
+      };
+      case (_) {
+        let t = Nat32.toText(token);
+        return #err(#InvalidToken(t));
+      };
+    };
+  };
+  
   public shared(msg) func approve(request: ApproveRequest) : async () {
 		if (ExtCore.TokenIdentifier.isPrincipal(request.token, Principal.fromActor(this)) == false) {
 			return;
@@ -297,6 +392,38 @@ shared (install) actor class iceventicket() = this {
     EXTENSIONS;
   };
   
+  public query({caller}) func getMyTickets(): async [(TokenIndex, Metadata)]{
+   assert(Principal.toText(caller) != "2vxsx-fae");
+    let rtickets = Buffer.Buffer<(TokenIndex, Metadata)>(0);
+    let iter = _registry.keys();
+    for (k in iter) {
+
+      switch(_registry.get(k)){
+        case(?token_owner){
+          if (AID.equal(ExtCore.User.toAID(#principal caller), token_owner) == true) {
+            let md = _tokenMetadata.get(k);
+            
+           
+            switch(md){
+              case(?md){
+                rtickets.add((k, md));
+              };
+              case(_){
+
+              }
+            }
+            
+          }
+        };
+        case(_){
+
+        }
+      }
+      
+    };
+    rtickets.toArray()
+  };
+
   public query func balance(request : BalanceRequest) : async BalanceResponse {
 		if (ExtCore.TokenIdentifier.isPrincipal(request.token, Principal.fromActor(this)) == false) {
 			return #err(#InvalidToken(request.token));

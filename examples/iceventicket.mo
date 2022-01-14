@@ -74,7 +74,7 @@ shared (install) actor class iceventicket() = this {
 
   private stable var _supply : Balance  = 0;
   private stable var _admin : Principal  = install.caller;
-  private stable var _moderator : Principal = install.caller;
+  private stable var _moderators : [Principal] = [install.caller];
   private stable var _minters : [Minter] = [];
   private stable var _nextTokenId : TokenIndex  = 0;
   private stable var _metadata : ?Blob = null;  
@@ -91,14 +91,18 @@ shared (install) actor class iceventicket() = this {
     _tokenMetadataState := [];
   };
 
-  public shared({caller}) func setModerator(mod : Principal): async (){
+  public shared({caller}) func addModerator(mod : Principal): async (){
     assert(caller == _admin);
-    _moderator := mod ;
+    _moderators := Array.append<Principal>([mod],_moderators) ;
   };
 
 	public shared(msg) func setMinter(minter : Principal, quota: Nat) : async Result.Result<Nat, Text> {
-		if(msg.caller == _moderator){
-      let fminter = Array.find<Minter>(_minters, func(m){
+    let fmod = Array.find(_moderators,func(m: Principal): Bool{
+      m == msg.caller
+    });
+	switch(fmod){
+    case(?fmod){
+     let fminter = Array.find<Minter>(_minters, func(m){
         m.minter == minter
       });
       switch(fminter){
@@ -121,9 +125,13 @@ shared (install) actor class iceventicket() = this {
         };
       };
       #ok(1);
-    }else{
+    };
+    case(_){
       #err("no permission!")
-    }
+    };
+  }
+ 
+   
     
 		//_minter := minter;
 	};
@@ -381,8 +389,8 @@ shared (install) actor class iceventicket() = this {
   public query func getAdmin() : async Principal {
     _admin;
   };
-  public query func getModerator() : async Principal {
-    _moderator;
+  public query func getModerators() : async [Principal] {
+    _moderators;
   };
   public query func getMinters() : async [Minter] {
     _minters;

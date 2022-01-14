@@ -163,7 +163,7 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
       };
     };
   };
-
+//need return tansaction id
 public shared(msg) func transferTo(request: TransferRequest) : async TransferIdResponse {
     if (ExtCore.TokenIdentifier.isPrincipal(request.token, Principal.fromActor(this)) == false) {
 			return #err(#InvalidToken(request.token));

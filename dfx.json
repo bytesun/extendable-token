@@ -1,6 +1,9 @@
 {
   "canisters": {
-    
+    "assets":{
+      "main": "assets/Container.mo",
+      "type": "motoko"
+    },
     "iceventicket": {
       "main": "examples/iceventicket.mo",
       "type": "motoko"

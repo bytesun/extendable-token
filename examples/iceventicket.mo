@@ -17,6 +17,9 @@ import Nat64 "mo:base/Nat64";
 import Buffer "mo:base/Buffer";
 import Random "mo:base/Random";
 import Nat32 "mo:base/Nat32";
+import Nat "mo:base/Nat";
+import Text "mo:base/Text";
+import Blob "mo:base/Blob";
 
 import AID "../motoko/util/AccountIdentifier";
 import ExtCore "../motoko/ext/Core";
@@ -24,6 +27,13 @@ import ExtCommon "../motoko/ext/Common";
 import ExtAllowance "../motoko/ext/Allowance";
 import ExtNonFungible "../motoko/ext/NonFungible";
 import ExtArchive "../motoko/ext/Archive";
+import Ext "mo:ext/Ext";
+
+import NFTicket "../ticket/NFTicket";
+import CDNTypes "../asset/Types";
+
+import Http "../http";
+import HttpTypes "../http/types";
 
 shared (install) actor class iceventicket() = this {
   
@@ -42,13 +52,14 @@ shared (install) actor class iceventicket() = this {
   type TransferResponse = ExtCore.TransferResponse;
   type AllowanceRequest = ExtAllowance.AllowanceRequest;
   type ApproveRequest = ExtAllowance.ApproveRequest;
-  type Metadata = ExtCommon.Metadata;
+  type Metadata = NFTicket.Metadata;
     //archive
   type TransactionId = ExtArchive.TransactionId;
   type Transaction = ExtArchive.Transaction;
   type TransactionsRequest = ExtArchive.TransactionsRequest;
 
   type MintRequest  = ExtNonFungible.MintRequest ;
+  type MintTicketRequest = NFTicket.MintTicketRequest;
 
   type Minter = {
     minter: Principal;
@@ -57,6 +68,8 @@ shared (install) actor class iceventicket() = this {
   };
   private let EXTENSIONS : [Extension] = ["@ext/common","@ext/archive", "@ext/allowance", "@ext/nonfungible"];
   
+  let storage: CDNTypes.Self = actor "5pqgi-saaaa-aaaal-aaavq-cai";
+
   //State work
   private stable var _registryState : [(TokenIndex, AccountIdentifier)] = [];
   private var _registry : HashMap.HashMap<TokenIndex, AccountIdentifier> = HashMap.fromIter(_registryState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
@@ -77,7 +90,7 @@ shared (install) actor class iceventicket() = this {
   private stable var _moderators : [Principal] = [install.caller];
   private stable var _minters : [Minter] = [];
   private stable var _nextTokenId : TokenIndex  = 0;
-  private stable var _metadata : ?Blob = null;  
+  private stable var _asset : ?Blob = null;  
 
   //State functions
   system func preupgrade() {
@@ -90,6 +103,7 @@ shared (install) actor class iceventicket() = this {
     _allowancesState := [];
     _tokenMetadataState := [];
   };
+
 
   public shared({caller}) func addModerator(mod : Principal): async (){
     assert(caller == _admin);
@@ -136,61 +150,62 @@ shared (install) actor class iceventicket() = this {
 		//_minter := minter;
 	};
 	
-  //default metadata
-  public shared(msg) func setMetadata(md: ?Blob): async (){   
-        _metadata := md;     
+  //default asset
+  public shared(msg) func setDefaultAsset(asset: ?Blob): async (){   
+        _asset := asset;     
   };
 
-  public shared(msg) func mintNFT(request : MintRequest) : async Result.Result<TokenIndex,Text> {
-		//assert(msg.caller == _minter);
-    let fminter = Array.find<Minter>(_minters, func(m){
-      m.minter == msg.caller;
-    });
-    switch(fminter){
-      case(?fminter){
-        if(fminter.quota > fminter.minted.size()){
-          let receiver = ExtCore.User.toAID(request.to);
-          let token = _nextTokenId;
-          let md : Metadata = #nonfungible({
-            metadata = request.metadata;
-          }); 
-          _registry.put(token, receiver);
-          _tokenMetadata.put(token, md);
-          _supply := _supply + 1;
-          _nextTokenId := _nextTokenId + 1;
+  // public shared(msg) func mintNFT(request : MintRequest) : async Result.Result<TokenIndex,Text> {
+	// 	//assert(msg.caller == _minter);
+  //   let fminter = Array.find<Minter>(_minters, func(m){
+  //     m.minter == msg.caller;
+  //   });
+  //   switch(fminter){
+  //     case(?fminter){
+  //       if(fminter.quota > fminter.minted.size()){
+  //         let receiver = ExtCore.User.toAID(request.to);
+  //         let token = _nextTokenId;
+  //         let md : Metadata = #nonfungible({
+  //           metadata = request.metadata;
+  //         }); 
+  //         _registry.put(token, receiver);
+  //         _tokenMetadata.put(token, md);
+  //         _supply := _supply + 1;
+  //         _nextTokenId := _nextTokenId + 1;
 
-          //update minter data
-          var minted = fminter.minted;
-          minted := Array.append<TokenIndex>([token],minted);
-          _minters := Array.map<Minter,Minter>(_minters,func(m: Minter):Minter{
-            if(m.minter == fminter.minter){
-              {
-                minter = fminter.minter;
-                quota = fminter.quota;
-                minted = minted;
-              }
-            }else{
-              m
-            }
-          });
+  //         //update minter data
+  //         var minted = fminter.minted;
+  //         minted := Array.append<TokenIndex>([token],minted);
+  //         _minters := Array.map<Minter,Minter>(_minters,func(m: Minter):Minter{
+  //           if(m.minter == fminter.minter){
+  //             {
+  //               minter = fminter.minter;
+  //               quota = fminter.quota;
+  //               minted = minted;
+  //             }
+  //           }else{
+  //             m
+  //           }
+  //         });
 
-          #ok(token);
-        }else{
-          #err("no more quota to mint!")
-        };
+  //         #ok(token);
+  //       }else{
+  //         #err("no more quota to mint!")
+  //       };
         
-      };
-      case(_){
-        #err("no permission!")
-      };
-    };
+  //     };
+  //     case(_){
+  //       #err("no permission!")
+  //     };
+  //   };
     
-	};
-  public shared({caller}) func mintEventTickets(spender: Principal, metadatas: [Blob]) : async Result.Result<[TokenIndex],Text> {
+	// };
+  public shared({caller}) func mintEventTickets(request: MintTicketRequest) : async Result.Result<[TokenIndex],Text> {
 		//assert(msg.caller == _minter);
     let fminter = Array.find<Minter>(_minters, func(m){
       m.minter == caller;
     });
+    let metadatas = request.metadatas;
     switch(fminter){
       case(?fminter){
         if(metadatas.size() > 0 and metadatas.size() <= (fminter.quota - fminter.minted.size())){
@@ -201,13 +216,14 @@ shared (install) actor class iceventicket() = this {
             let receiver = ExtCore.User.toAID(#principal(caller));
             let token = _nextTokenId;
             
-            let md : Metadata = #nonfungible({
-              metadata = ?metadatas[i];
-            }); 
-            _registry.put(token, receiver);
-            _tokenMetadata.put(token, md);
+            // let md : Metadata = #nonfungible({
+            //   metadata = ?metadatas[i];
+            // }); 
 
-            if(spender != caller) _allowances.put(token,spender );
+            _registry.put(token, receiver);
+            _tokenMetadata.put(token, metadatas[i]);
+
+            if(request.spender != caller) _allowances.put(token,request.spender );
 
             newIds.add(token);
             _supply := _supply + 1;
@@ -317,7 +333,9 @@ shared (install) actor class iceventicket() = this {
 				};
 				_allowances.delete(token);
 				_registry.put(token, receiver);
+        let txid = add(request);
 				return #ok(request.amount);
+        
       };
       case (_) {
         return #err(#InvalidToken(request.token));
@@ -336,10 +354,7 @@ shared (install) actor class iceventicket() = this {
     switch (_registry.get(token)) {
       case (?token_owner) {
 				if(AID.equal(owner, token_owner) == false) {
-					return #err(#Unauthorized(owner));
-				};
-				if (AID.equal(owner, spender) == false) {
-					switch (_allowances.get(token)) {
+          switch (_allowances.get(token)) {
 						case (?token_spender) {
 							if(Principal.equal(caller, token_spender) == false) {								
 								return #err(#Unauthorized(spender));
@@ -349,9 +364,32 @@ shared (install) actor class iceventicket() = this {
 							return #err(#Unauthorized(spender));
 						};
 					};
+					// return #err(#Unauthorized(owner));
 				};
+				// if (AID.equal(owner, spender) == false) {
+				// 	switch (_allowances.get(token)) {
+				// 		case (?token_spender) {
+				// 			if(Principal.equal(caller, token_spender) == false) {								
+				// 				return #err(#Unauthorized(spender));
+				// 			};
+				// 		};
+				// 		case (_) {
+				// 			return #err(#Unauthorized(spender));
+				// 		};
+				// 	};
+				// };
 				_allowances.delete(token);
 				_registry.put(token, receiver);
+
+        let txid = add({
+          from = #principal(caller);
+          to = #principal(to);
+          token =  Ext.TokenIdentifier.encode(Principal.fromActor(this),token);
+          amount = 1;
+          memo = Blob.fromArray([]);
+          notify = false;
+          subaccount = ?[];
+        });
 				return #ok(1);
       };
       case (_) {
@@ -401,7 +439,7 @@ shared (install) actor class iceventicket() = this {
   };
   
   public query({caller}) func getMyTickets(): async [(TokenIndex, Metadata)]{
-   assert(Principal.toText(caller) != "2vxsx-fae");
+   if(Principal.isAnonymous(caller) == false){
     let rtickets = Buffer.Buffer<(TokenIndex, Metadata)>(0);
     let iter = _registry.keys();
     for (k in iter) {
@@ -414,6 +452,7 @@ shared (install) actor class iceventicket() = this {
            
             switch(md){
               case(?md){
+                // let ti = Ext.TokenIdentifier.encode(Principal.fromActor(this),k);
                 rtickets.add((k, md));
               };
               case(_){
@@ -429,7 +468,10 @@ shared (install) actor class iceventicket() = this {
       }
       
     };
-    rtickets.toArray()
+    rtickets.toArray();
+   }else{
+     []
+   }
   };
 
   public query func balance(request : BalanceRequest) : async BalanceResponse {
@@ -534,5 +576,61 @@ shared (install) actor class iceventicket() = this {
   };
   public query func availableCycles() : async Nat {
     return Cycles.balance();
+  };
+
+
+  let _HttpHandler = Http.HttpHandler();
+
+
+  public query func http_request(request : HttpTypes.Request) : async HttpTypes.Response {
+      if (Text.contains(request.url, #text("tokenid"))) {
+          let tokenId = Iter.toArray(Text.tokens(request.url, #text("tokenid=")))[1];
+          let tokenind = ExtCore.TokenIdentifier.getIndex(tokenId);
+           
+          switch (_tokenMetadata.get(tokenind)) {
+              case (?token_metadata) {
+                let fid = token_metadata.asset;
+                _HttpHandler.renderMesssage("Token Index:"# Nat32.toText(tokenind) #"\n"  #"\n" #
+                "Event ID : "# Nat.toText(token_metadata.event_id) #"\n"  #
+                "Event Name :"# token_metadata.event_name #"\n"  #
+                "Event Host : "# token_metadata.host #"\n"               
+                );
+                // switch(fid){
+                //   case(?fid){
+                //     let f = await storage.fetchFileInfo(fid);                
+                //     switch(f){
+                //       case(?f){
+                //           let fc = await storage.fetchFileChunks(fid);
+                //           switch(fc){
+                //             case(?fc){
+                //                 _HttpHandler.renderTicket(f.extension,Blob.fromArray(fc));  
+                //             };
+                //             case(_){
+                //                 _HttpHandler.renderMesssage("no file data found")
+                //             }
+                //           }
+                            
+                //       };
+                //       case(_){
+                //         _HttpHandler.renderMesssage("no file extention found")
+                //       }
+                //     };
+                    
+                   
+                //   };
+                //   case(_){
+                //      _HttpHandler.renderMesssage("no asset associated with the token")
+                //   }
+                // }
+                
+              };
+              case (_) {
+                _HttpHandler.renderMesssage("no token id found!")
+              };
+            };
+      }else{
+        _HttpHandler.request(request);
+      };         
+      
   };
 }

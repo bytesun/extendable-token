@@ -8,7 +8,8 @@ module NFTicket = {
   public type Metadata = {
     event_id: Nat;
     event_name: Text;
-    event_day: Int;
+    event_day: Text;
+    event_location: Text;
     host: Text;
     asset: ?Text;
     

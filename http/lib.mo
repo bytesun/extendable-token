@@ -7,6 +7,7 @@ import Cycles "mo:base/ExperimentalCycles";
 import Float "mo:base/Float";
 import Iter "mo:base/Iter";
 import Nat "mo:base/Nat";
+import Int "mo:base/Int";
 import Nat8 "mo:base/Nat8";
 import Nat32 "mo:base/Nat32";
 import Nat64 "mo:base/Nat64";
@@ -110,12 +111,39 @@ module {
 
 
         
-        public func renderTicket(ext:  CDN.FileExtension, ticket: Blob): Types.Response {
+        public func renderTicket(tokenIndex: Nat32, ticket: NFTicket.Metadata): Types.Response {
 
                 return {
                     status_code = 200;
-                    headers = [("content-type", getContentType(ext))];
-                    body = ticket;
+                    headers = [("content-type", "image/svg+xml")];
+                    body = Text.encodeUtf8 (
+                         
+                        "<svg xmlns=\"http://www.w3.org/2000/svg\" preserveAspectRatio=\"xMinYMin meet\" viewBox=\"0 0 500 500\">"#
+                            "<style>" #
+                            ".base { fill: white; font-family: HelveticaNeue-Bold, Helvetica Neue; font-size: 14px; } " #
+                            ".title {fill: white; font-family:HelveticaNeue-Bold, Helvetica Neue; font-size: 20px;}" #
+                            "</style>" #
+                            "<rect width=\"100%\" height=\"100%\"/>" #
+                            "<text x=\"10\" y=\"20\" class=\"title\">" #
+                            "ICEvent Ticket  #" # Nat32.toText(tokenIndex)  #
+                            "</text>" #
+                            "<text x=\"10\" y=\"40\" class=\"base\">" #
+                            
+                            "</text>" #
+                            "<text x=\"10\" y=\"60\" class=\"base\">" #
+                            "Event: " #  ticket.event_name #
+                            "</text>" #
+                            "<text x=\"10\" y=\"80\" class=\"base\">" #
+                            "Time: "# ticket.event_day #
+                            "</text>" #
+                            "<text x=\"10\" y=\"100\" class=\"base\">" #
+                            "Location: " # ticket.event_location #
+                            "</text>" #
+                            "<text x=\"10\" y=\"120\" class=\"base\">" #
+                            "Host: "# ticket.host #
+                            "</text>  " #                  
+                        "</svg>" 
+                    );
                     streaming_strategy = null;
                 };
 

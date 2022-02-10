@@ -18,6 +18,7 @@ import Buffer "mo:base/Buffer";
 import Random "mo:base/Random";
 import Nat32 "mo:base/Nat32";
 import Nat "mo:base/Nat";
+import Int "mo:base/Int";
 import Text "mo:base/Text";
 import Blob "mo:base/Blob";
 
@@ -343,10 +344,10 @@ shared (install) actor class iceventicket() = this {
     };
   };
   
-   public shared({caller}) func transferTicket(to:Principal,token: TokenIndex) : async TransferResponse {
+   public shared({caller}) func transferTicket(to:Principal,tokeni: TokenIdentifier) : async TransferResponse {
 
 
-		//let token = ExtCore.TokenIdentifier.getIndex(request.token);
+		let token = ExtCore.TokenIdentifier.getIndex(tokeni);
     let owner = ExtCore.User.toAID(#principal(caller));
     let spender = ExtCore.User.toAID(#principal(caller));
     let receiver = ExtCore.User.toAID(#principal(to));
@@ -438,9 +439,13 @@ shared (install) actor class iceventicket() = this {
     EXTENSIONS;
   };
   
-  public query({caller}) func getMyTickets(): async [(TokenIndex, Metadata)]{
+  public query func getTokenIdentifier(tokenIndex: TokenIndex): async TokenIdentifier{
+    Ext.TokenIdentifier.encode(Principal.fromActor(this),tokenIndex);
+  };
+
+  public query({caller}) func getMyTickets(): async [(TokenIdentifier, Metadata)]{
    if(Principal.isAnonymous(caller) == false){
-    let rtickets = Buffer.Buffer<(TokenIndex, Metadata)>(0);
+    let rtickets = Buffer.Buffer<(TokenIdentifier, Metadata)>(0);
     let iter = _registry.keys();
     for (k in iter) {
 
@@ -452,8 +457,8 @@ shared (install) actor class iceventicket() = this {
            
             switch(md){
               case(?md){
-                // let ti = Ext.TokenIdentifier.encode(Principal.fromActor(this),k);
-                rtickets.add((k, md));
+                let ti = Ext.TokenIdentifier.encode(Principal.fromActor(this),k);
+                rtickets.add((ti, md));
               };
               case(_){
 
@@ -590,10 +595,15 @@ shared (install) actor class iceventicket() = this {
           switch (_tokenMetadata.get(tokenind)) {
               case (?token_metadata) {
                 let fid = token_metadata.asset;
-                _HttpHandler.renderMesssage("Token Index:"# Nat32.toText(tokenind) #"\n"  #"\n" #
-                "Event ID : "# Nat.toText(token_metadata.event_id) #"\n"  #
-                "Event Name :"# token_metadata.event_name #"\n"  #
-                "Event Host : "# token_metadata.host #"\n"               
+                _HttpHandler.renderTicket(tokenind,{
+                  event_id =  token_metadata.event_id;
+                  event_name =token_metadata.event_name ;
+                  event_day = token_metadata.event_day;
+                  event_location = token_metadata.event_location;
+                  host = token_metadata.host;
+                  asset = ?"";
+                }
+         
                 );
                 // switch(fid){
                 //   case(?fid){

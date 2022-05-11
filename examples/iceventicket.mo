@@ -344,10 +344,9 @@ shared (install) actor class iceventicket() = this {
     };
   };
   
-   public shared({caller}) func transferTicket(to:Principal,tokeni: TokenIdentifier) : async TransferResponse {
-
-
-		let token = ExtCore.TokenIdentifier.getIndex(tokeni);
+  func transferTicket(caller: Principal,to:Principal,token: TokenIndex) :  TransferResponse {
+  
+		
     let owner = ExtCore.User.toAID(#principal(caller));
     let spender = ExtCore.User.toAID(#principal(caller));
     let receiver = ExtCore.User.toAID(#principal(to));
@@ -398,6 +397,16 @@ shared (install) actor class iceventicket() = this {
         return #err(#InvalidToken(t));
       };
     };
+  };
+
+  public shared({caller}) func transferTicketWithId(to:Principal,tokeni: TokenIdentifier) : async TransferResponse {
+    let token = ExtCore.TokenIdentifier.getIndex(tokeni);
+    transferTicket(caller, to, token)
+  };
+
+   public shared({caller}) func transferTicketWithIndex(to:Principal,token: TokenIndex) : async TransferResponse {
+     transferTicket(caller, to, token)
+
   };
   
   public shared(msg) func approve(request: ApproveRequest) : async () {
@@ -605,6 +614,7 @@ shared (install) actor class iceventicket() = this {
                 }
          
                 );
+                
                 // switch(fid){
                 //   case(?fid){
                 //     let f = await storage.fetchFileInfo(fid);                

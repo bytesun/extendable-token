@@ -35,6 +35,7 @@ import CDNTypes "../asset/Types";
 
 import Http "../http";
 import HttpTypes "../http/types";
+import Page "../utils/Page";
 
 shared (install) actor class iceventicket() = this {
   
@@ -71,6 +72,7 @@ shared (install) actor class iceventicket() = this {
   
   let storage: CDNTypes.Self = actor "5pqgi-saaaa-aaaal-aaavq-cai";
 
+  private let default_page_size = 10;
   //State work
   private stable var _registryState : [(TokenIndex, AccountIdentifier)] = [];
   private var _registry : HashMap.HashMap<TokenIndex, AccountIdentifier> = HashMap.fromIter(_registryState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
@@ -452,7 +454,7 @@ shared (install) actor class iceventicket() = this {
     Ext.TokenIdentifier.encode(Principal.fromActor(this),tokenIndex);
   };
 
-  public query({caller}) func getMyTickets(): async [(TokenIdentifier, Metadata)]{
+  public query({caller}) func getMyTickets(page: Nat): async [(TokenIdentifier, Metadata)]{
    if(Principal.isAnonymous(caller) == false){
     let rtickets = Buffer.Buffer<(TokenIdentifier, Metadata)>(0);
     let iter = _registry.keys();
@@ -461,8 +463,7 @@ shared (install) actor class iceventicket() = this {
       switch(_registry.get(k)){
         case(?token_owner){
           if (AID.equal(ExtCore.User.toAID(#principal caller), token_owner) == true) {
-            let md = _tokenMetadata.get(k);
-            
+            let md = _tokenMetadata.get(k);          
            
             switch(md){
               case(?md){
@@ -482,7 +483,9 @@ shared (install) actor class iceventicket() = this {
       }
       
     };
-    rtickets.toArray();
+    let arr = rtickets.toArray();
+    Page.getArrayPage(arr,page,default_page_size);
+
    }else{
      []
    }
@@ -557,8 +560,10 @@ shared (install) actor class iceventicket() = this {
     #ok(_supply);
   };
   
-  public query func getRegistry() : async [(TokenIndex, AccountIdentifier)] {
-    Iter.toArray(_registry.entries());
+  public query func getRegistry(page: Nat) : async [(TokenIndex, AccountIdentifier)] {
+
+    let arr = Iter.toArray(_registry.entries());
+    Page.getArrayPage(arr,page,default_page_size);
   };
   public query func getAllowances() : async [(TokenIndex, Principal)] {
     Iter.toArray(_allowances.entries());

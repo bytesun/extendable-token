@@ -10,12 +10,15 @@ import Iter "mo:base/Iter";
 import Array "mo:base/Array";
 import Time "mo:base/Time";
 import Nat64 "mo:base/Nat64";
+import List "mo:base/List";
 
 //Get the path right
 import AID "../motoko/util/AccountIdentifier";
 import ExtCore "../motoko/ext/Core";
 import ExtCommon "../motoko/ext/Common";
 import ExtArchive "../motoko/ext/Archive";
+
+import ICETTypes "../icet/types";
 
 actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat8, init_supply: ExtCore.Balance, init_owner: Principal) = this{
   
@@ -39,7 +42,7 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
   type TransactionId = ExtArchive.TransactionId;
   type Transaction = ExtArchive.Transaction;
   type TransactionsRequest = ExtArchive.TransactionsRequest;
-
+  type TransactionVerifyRequest = ICETTypes.TransactionVerifyRequest;
 
   private let EXTENSIONS : [Extension] = ["@ext/common","@ext/archive"];
   
@@ -49,6 +52,8 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
 
   private stable var _nextTransationId : TransactionId = 1;
   private stable var _transactions : [Transaction] = [];
+  private var bufferTransactions : List.List<Transaction> = List.fromArray(_transactions);
+
 
   private stable let METADATA : Metadata = #fungible({
     name = init_name;
@@ -61,6 +66,7 @@ actor class icevent_token(init_name: Text, init_symbol: Text, init_decimals: Nat
   //State functions
   system func preupgrade() {
     _balancesState := Iter.toArray(_balances.entries());
+    _transactions := List.toArray(bufferTransactions);
   };
   system func postupgrade() {
     _balancesState := [];
@@ -265,11 +271,13 @@ public shared(msg) func transferTo(request: TransferRequest) : async TransferIdR
    func add(request : TransferRequest):  TransactionId{
 
     let transid = _nextTransationId;
-    _transactions := Array.append<Transaction>([{
+    let newTrans = {
       txid = transid;
       request = request;
       date = Nat64.fromIntWrap(Time.now());
-    }],_transactions);
+    };
+    //_transactions := Array.append<Transaction>([newTrans],_transactions);
+    bufferTransactions := List.push(newTrans, bufferTransactions);
 
      _nextTransationId := _nextTransationId+1;
 
@@ -280,16 +288,16 @@ public shared(msg) func transferTo(request: TransferRequest) : async TransferIdR
     let q = request.query_option;
     switch(q){
       case(#txid(q)){
-        let ts = Array.filter<Transaction>(_transactions, func(t: Transaction): Bool{
+        let ts = List.filter<Transaction>(bufferTransactions, func(t: Transaction): Bool{
           t.txid == q
         });
-        #ok(ts);
+        #ok(List.toArray(ts));
       };
       case(#user(q)){
-        let ts =Array.filter(_transactions,func(t: Transaction): Bool{
+        let ts =List.filter(bufferTransactions,func(t: Transaction): Bool{
           t.request.from == q or t.request.to == q
          });
-         #ok(ts);
+         #ok(List.toArray(ts));
       };
       case(#date(q)){
         #err(#Other("'date' option is not support"))
@@ -298,12 +306,28 @@ public shared(msg) func transferTo(request: TransferRequest) : async TransferIdR
         #err(#Other("'page' option is not support"))
       };
       case(#all(q)){
-        #ok(_transactions);
+        #ok(List.toArray(bufferTransactions));
+      };    
+
+    };
+
+  };
+
+  //add it to manually verify transaction
+  public query func verifyTransaction(req: TransactionVerifyRequest): async Result.Result<Transaction, Text>{
+   
+    let trans = List.find<Transaction>(bufferTransactions, func(t:Transaction):Bool{
+      t.request.from == req.from and t.request.to == req.to and t.request.amount == req.amount and t.request.memo == req.memo
+    });
+
+    switch(trans){
+      case(?trans){
+        #ok(trans);
       };
-      
-
-    }
-
+      case(_){
+        #err("no transaction found")
+      };
+    };
   };
   
   public query func extensions() : async [Extension] {

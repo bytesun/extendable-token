@@ -11,6 +11,7 @@ import Array "mo:base/Array";
 import Time "mo:base/Time";
 import Nat64 "mo:base/Nat64";
 import List "mo:base/List";
+import Blob "mo:base/Blob";
 
 //Get the path right
 import AID "../motoko/util/AccountIdentifier";
@@ -317,7 +318,8 @@ public shared(msg) func transferTo(request: TransferRequest) : async TransferIdR
   public query func verifyTransaction(req: TransactionVerifyRequest): async Result.Result<Transaction, Text>{
    
     let trans = List.find<Transaction>(bufferTransactions, func(t:Transaction):Bool{
-      t.request.from == req.from and t.request.to == req.to and t.request.amount == req.amount and t.request.memo == req.memo
+      t.request.from == req.from and t.request.to == req.to and t.request.amount == req.amount 
+      //and Blob.equal(t.request.memo,req.memo)
     });
 
     switch(trans){

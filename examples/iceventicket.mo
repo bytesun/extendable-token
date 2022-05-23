@@ -119,29 +119,39 @@ shared (install) actor class iceventicket() = this {
     });
 	switch(fmod){
     case(?fmod){
-     let fminter = Array.find<Minter>(_minters, func(m){
-        m.minter == minter
-      });
-      switch(fminter){
-        case(?fminter){
-          //add more quota
-          _minters := Array.map<Minter,Minter>(_minters, func(m:Minter): Minter{
-            if(m.minter == minter){ 
-              {
-                minter = m.minter;
-                quota = m.quota + quota;
-                minted = m.minted;
-              }
-            }else{
-              m
-            }
-          })       
-        };
-        case(_){
-          _minters := Array.append<Minter>([{minter=minter;quota=quota;minted=[]}],_minters);
-        };
-      };
-      #ok(1);
+      //add storage quota
+     let re = await storage.setUploaders(minter, quota);
+     switch(re){
+       case(#ok(c)){
+           let fminter = Array.find<Minter>(_minters, func(m){
+              m.minter == minter
+            });
+            switch(fminter){
+              case(?fminter){
+                //add more quota
+                _minters := Array.map<Minter,Minter>(_minters, func(m:Minter): Minter{
+                  if(m.minter == minter){ 
+                    {
+                      minter = m.minter;
+                      quota = m.quota + quota;
+                      minted = m.minted;
+                    }
+                  }else{
+                    m
+                  }
+                })       
+              };
+              case(_){
+                _minters := Array.append<Minter>([{minter=minter;quota=quota;minted=[]}],_minters);
+              };
+            };
+            #ok(1);
+       };
+       case(#err(e)){
+         #err(e);
+       };
+     };
+     
     };
     case(_){
       #err("no permission!")

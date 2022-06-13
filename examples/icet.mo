@@ -1,7 +1,7 @@
 /*
 Basic single token per canister
 */
-
+import Prim "mo:prim";
 import Cycles "mo:base/ExperimentalCycles";
 import HashMap "mo:base/HashMap";
 import Principal "mo:base/Principal";
@@ -369,4 +369,15 @@ public shared(msg) func transferTo(request: TransferRequest) : async TransferIdR
   public query func availableCycles() : async Nat {
     return Cycles.balance();
   };
+  public query func getSystemData(): async {
+       cycles: Nat;
+      memory: Nat;
+      heap: Nat;
+   }{
+    return {
+      cycles = Cycles.balance();
+      memory = Prim.rts_memory_size();
+      heap = Prim.rts_heap_size();
+    };
+  } ;
 }

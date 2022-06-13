@@ -6,6 +6,7 @@ ERC721 - note the following:
 -Memo is ignored
 -No transferFrom (as transfer includes a from field)
 */
+import Prim "mo:prim";
 import Cycles "mo:base/ExperimentalCycles";
 import HashMap "mo:base/HashMap";
 import Principal "mo:base/Principal";
@@ -606,7 +607,17 @@ shared (install) actor class iceventicket() = this {
   public query func availableCycles() : async Nat {
     return Cycles.balance();
   };
-
+public query func getSystemData(): async {
+       cycles: Nat;
+      memory: Nat;
+      heap: Nat;
+   }{
+    return {
+      cycles = Cycles.balance();
+      memory = Prim.rts_memory_size();
+      heap = Prim.rts_heap_size();
+    };
+  } ;
 
   let _HttpHandler = Http.HttpHandler();
 

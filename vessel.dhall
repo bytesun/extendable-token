@@ -1,4 +1,4 @@
 {
-  dependencies = [ "base", "ext" ,"cap" ],
+  dependencies = [ "base", "matchers" ,"ext"],
   compiler = None Text
 }
